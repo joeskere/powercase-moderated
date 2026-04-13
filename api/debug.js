@@ -13,26 +13,14 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   try {
     const tokenData = await loadToken();
-    const sellerId = tokenData.user_id;
     const token = tokenData.access_token;
-
-    // Probar filtro por sub_status directo
-    const r1 = await fetch(
-      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&sub_status=forbidden&limit=5`,
+    const ids = req.query.ids || "MLM3763796664,MLM2204674063";
+    const r = await fetch(
+      `https://api.mercadolibre.com/items?ids=${ids}&attributes=id,status,sub_status`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    const d1 = await r1.json();
-
-    const r2 = await fetch(
-      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&sub_status=pending_documentation&limit=5`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const d2 = await r2.json();
-
-    return res.json({
-      forbidden: { total: d1.paging?.total, sample: d1.results?.slice(0,3) },
-      pending_documentation: { total: d2.paging?.total, sample: d2.results?.slice(0,3) },
-    });
+    const data = await r.json();
+    return res.json(data);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
