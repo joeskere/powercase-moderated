@@ -47,12 +47,13 @@ async function getValidToken() {
   return { token: tokenData.access_token, userId: tokenData.user_id };
 }
 
-async function fetchAllPausedItems(token, sellerId) {
+// Solo trae items under_review (propiedad intelectual)
+async function fetchAllUnderReviewItems(token, sellerId) {
   const items = [];
   let offset = 0;
   while (true) {
     const res = await fetch(
-      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&offset=${offset}&limit=50`,
+      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=under_review&offset=${offset}&limit=50`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const data = await res.json();
@@ -87,6 +88,13 @@ function extractSku(item) {
   return null;
 }
 
+function getMotivoLabel(subStatuses) {
+  if (!subStatuses) return "Desconocido";
+  if (subStatuses.includes("forbidden")) return "Incumplió política de propiedad intelectual";
+  if (subStatuses.includes("pending_documentation")) return "Sube la factura para comprobar originalidad";
+  return subStatuses.join(", ");
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -96,23 +104,33 @@ export default async function handler(req, res) {
 
   try {
     const { token, userId } = await getValidToken();
-    const pausedItemIds = await fetchAllPausedItems(token, userId);
-    if (!pausedItemIds.length) return res.json({ items: [], total: 0, seller_id: userId });
-    const itemsDetail = await fetchItemsDetail(token, pausedItemIds);
-    const moderatedItems = itemsDetail
-      .filter(item => item.sub_status && item.sub_status.length > 0)
-      .map(item => ({
-        id: item.id,
-        title: item.title,
-        sku: extractSku(item),
-        status: item.status,
-        sub_status: item.sub_status,
-        price: item.price,
-        thumbnail: item.thumbnail,
-        permalink: item.permalink,
-        appeal_url: `https://www.mercadolibre.com.mx/reclamaciones/reclamo/enviar?resource_type=item&resource_id=${item.id}`,
-      }));
-    return res.json({ items: moderatedItems, total: moderatedItems.length, seller_id: userId, paused_total: pausedItemIds.length });
+
+    // Traer items under_review
+    const underReviewIds = await fetchAllUnderReviewItems(token, userId);
+    if (!underReviewIds.length) return res.json({ items: [], total: 0, seller_id: userId });
+
+    const itemsDetail = await fetchItemsDetail(token, underReviewIds);
+
+    // Filtrar solo los de propiedad intelectual
+    const ipItems = itemsDetail.filter(item =>
+      item.sub_status &&
+      (item.sub_status.includes("forbidden") || item.sub_status.includes("pending_documentation"))
+    );
+
+    const result = ipItems.map(item => ({
+      id: item.id,
+      title: item.title,
+      sku: extractSku(item),
+      status: item.status,
+      sub_status: item.sub_status,
+      motivo: getMotivoLabel(item.sub_status),
+      price: item.price,
+      thumbnail: item.thumbnail,
+      permalink: item.permalink,
+      appeal_url: `https://www.mercadolibre.com.mx/reclamaciones/reclamo/enviar?resource_type=item&resource_id=${item.id}`,
+    }));
+
+    return res.json({ items: result, total: result.length, seller_id: userId, under_review_total: underReviewIds.length });
   } catch (err) {
     console.error("Error:", err);
     return res.status(500).json({ error: err.message });
