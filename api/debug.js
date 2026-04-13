@@ -14,18 +14,18 @@ export default async function handler(req, res) {
   try {
     const tokenData = await loadToken();
     const sellerId = tokenData.user_id;
+    const token = tokenData.access_token;
 
-    // Probar distintos status
-    const statuses = ["under_review", "paused", "inactive"];
+    const statuses = ["under_review", "paused", "inactive", "closed"];
     const results = {};
 
     for (const status of statuses) {
       const r = await fetch(
         `https://api.mercadolibre.com/users/${sellerId}/items/search?status=${status}&limit=1`,
-        { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await r.json();
-      results[status] = data.paging?.total ?? data;
+      results[status] = data.paging ? data.paging.total : data;
     }
 
     return res.json({ seller_id: sellerId, totals: results });
