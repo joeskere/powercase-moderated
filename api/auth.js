@@ -1,31 +1,27 @@
+import { put, list, head } from "@vercel/blob";
+
 const ML_APP_ID = process.env.ML_APP_ID;
 const ML_SECRET = process.env.ML_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || "https://powercase-moderated.vercel.app/api/auth/callback";
-const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 
 async function saveToken(payload) {
-  const res = await fetch("https://blob.vercel-storage.com/ml_token.json", {
-    method: "PUT",
-    headers: {
-      "Authorization": `Bearer ${BLOB_TOKEN}`,
-      "Content-Type": "application/json",
-      "x-allow-overwrite": "1",
-    },
-    body: JSON.stringify(payload),
+  await put("ml_token.json", JSON.stringify(payload), {
+    access: "public",
+    allowOverwrite: true,
+    addRandomSuffix: false,
   });
-  if (!res.ok) throw new Error(`Blob save failed: ${res.status} ${await res.text()}`);
-  return res.json();
 }
 
 async function loadToken() {
-  const listRes = await fetch("https://blob.vercel-storage.com?prefix=ml_token.json&limit=1", {
-    headers: { "Authorization": `Bearer ${BLOB_TOKEN}` },
-  });
-  const list = await listRes.json();
-  if (!list.blobs || list.blobs.length === 0) return null;
-  const res = await fetch(list.blobs[0].url);
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const { blobs } = await list({ prefix: "ml_token.json" });
+    if (!blobs.length) return null;
+    const res = await fetch(blobs[0].url);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
@@ -59,7 +55,7 @@ export default async function handler(req, res) {
         }),
       });
       const tokenData = await tokenRes.json();
-      if (tokenData.error) throw new Error(tokenData.error);
+      if (tokenData.error) throw new Error(tokenData.message || tokenData.error);
       await saveToken({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
@@ -70,7 +66,7 @@ export default async function handler(req, res) {
       return res.redirect(`/?connected=true&user_id=${tokenData.user_id}`);
     } catch (err) {
       console.error("OAuth error:", err);
-      return res.redirect(`/?error=token_exchange_failed`);
+      return res.redirect(`/?error=token_exchange_failed&msg=${encodeURIComponent(err.message)}`);
     }
   }
 

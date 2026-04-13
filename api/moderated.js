@@ -1,25 +1,20 @@
-const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+import { list } from "@vercel/blob";
 
 async function loadToken() {
-  const listRes = await fetch("https://blob.vercel-storage.com?prefix=ml_token.json&limit=1", {
-    headers: { "Authorization": `Bearer ${BLOB_TOKEN}` },
-  });
-  const list = await listRes.json();
-  if (!list.blobs || list.blobs.length === 0) throw new Error("No token saved. Please authenticate first.");
-  const res = await fetch(list.blobs[0].url);
+  const { blobs } = await list({ prefix: "ml_token.json" });
+  if (!blobs.length) throw new Error("No token saved. Please authenticate first.");
+  const res = await fetch(blobs[0].url);
   if (!res.ok) throw new Error("Failed to load token");
   return res.json();
 }
 
+import { put } from "@vercel/blob";
+
 async function saveToken(payload) {
-  await fetch("https://blob.vercel-storage.com/ml_token.json", {
-    method: "PUT",
-    headers: {
-      "Authorization": `Bearer ${BLOB_TOKEN}`,
-      "Content-Type": "application/json",
-      "x-allow-overwrite": "1",
-    },
-    body: JSON.stringify(payload),
+  await put("ml_token.json", JSON.stringify(payload), {
+    access: "public",
+    allowOverwrite: true,
+    addRandomSuffix: false,
   });
 }
 
@@ -54,17 +49,16 @@ async function getValidToken() {
 async function fetchAllPausedItems(token, sellerId) {
   const items = [];
   let offset = 0;
-  const limit = 50;
   while (true) {
     const res = await fetch(
-      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&offset=${offset}&limit=${limit}`,
+      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&offset=${offset}&limit=50`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const data = await res.json();
     if (!data.results || data.results.length === 0) break;
     items.push(...data.results);
-    if (offset + limit >= data.paging.total) break;
-    offset += limit;
+    if (offset + 50 >= data.paging.total) break;
+    offset += 50;
   }
   return items;
 }
@@ -86,9 +80,7 @@ async function fetchItemsDetail(token, itemIds) {
 function extractSku(item) {
   if (item.seller_sku) return item.seller_sku;
   if (item.attributes) {
-    const skuAttr = item.attributes.find(
-      (a) => a.id === "SELLER_SKU" || a.id === "MODEL" || a.id === "PART_NUMBER"
-    );
+    const skuAttr = item.attributes.find(a => a.id === "SELLER_SKU" || a.id === "MODEL" || a.id === "PART_NUMBER");
     if (skuAttr) return skuAttr.value_name;
   }
   return null;
@@ -104,12 +96,11 @@ export default async function handler(req, res) {
   try {
     const { token, userId } = await getValidToken();
     const pausedItemIds = await fetchAllPausedItems(token, userId);
-    if (pausedItemIds.length === 0) return res.json({ items: [], total: 0, seller_id: userId });
-
+    if (!pausedItemIds.length) return res.json({ items: [], total: 0, seller_id: userId });
     const itemsDetail = await fetchItemsDetail(token, pausedItemIds);
     const moderatedItems = itemsDetail
-      .filter((item) => item.sub_status && item.sub_status.length > 0)
-      .map((item) => ({
+      .filter(item => item.sub_status && item.sub_status.length > 0)
+      .map(item => ({
         id: item.id,
         title: item.title,
         sku: extractSku(item),
@@ -120,7 +111,6 @@ export default async function handler(req, res) {
         permalink: item.permalink,
         appeal_url: `https://www.mercadolibre.com.mx/reclamaciones/reclamo/enviar?resource_type=item&resource_id=${item.id}`,
       }));
-
     return res.json({ items: moderatedItems, total: moderatedItems.length, seller_id: userId, paused_total: pausedItemIds.length });
   } catch (err) {
     console.error("Error:", err);
