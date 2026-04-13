@@ -53,7 +53,7 @@ async function fetchAllUnderReviewItems(token, sellerId) {
   let offset = 0;
   while (true) {
     const res = await fetch(
-      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=under_review&offset=${offset}&limit=50`,
+      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&offset=${offset}&limit=50`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const data = await res.json();
