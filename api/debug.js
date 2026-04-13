@@ -16,19 +16,23 @@ export default async function handler(req, res) {
     const sellerId = tokenData.user_id;
     const token = tokenData.access_token;
 
-    const statuses = ["under_review", "paused", "inactive", "closed"];
-    const results = {};
+    // Probar filtro por sub_status directo
+    const r1 = await fetch(
+      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&sub_status=forbidden&limit=5`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const d1 = await r1.json();
 
-    for (const status of statuses) {
-      const r = await fetch(
-        `https://api.mercadolibre.com/users/${sellerId}/items/search?status=${status}&limit=1`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const data = await r.json();
-      results[status] = data.paging ? data.paging.total : data;
-    }
+    const r2 = await fetch(
+      `https://api.mercadolibre.com/users/${sellerId}/items/search?status=paused&sub_status=pending_documentation&limit=5`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const d2 = await r2.json();
 
-    return res.json({ seller_id: sellerId, totals: results });
+    return res.json({
+      forbidden: { total: d1.paging?.total, sample: d1.results?.slice(0,3) },
+      pending_documentation: { total: d2.paging?.total, sample: d2.results?.slice(0,3) },
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
