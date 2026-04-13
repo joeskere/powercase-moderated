@@ -1,18 +1,17 @@
-import { list } from "@vercel/blob";
+import { put, list, getDownloadUrl } from "@vercel/blob";
 
 async function loadToken() {
   const { blobs } = await list({ prefix: "ml_token.json" });
   if (!blobs.length) throw new Error("No token saved. Please authenticate first.");
-  const res = await fetch(blobs[0].url);
+  const { url } = await getDownloadUrl(blobs[0].url);
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to load token");
   return res.json();
 }
 
-import { put } from "@vercel/blob";
-
 async function saveToken(payload) {
   await put("ml_token.json", JSON.stringify(payload), {
-    access: "public",
+    access: "private",
     allowOverwrite: true,
     addRandomSuffix: false,
   });

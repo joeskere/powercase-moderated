@@ -1,4 +1,4 @@
-import { put, list, head } from "@vercel/blob";
+import { put, list, getDownloadUrl } from "@vercel/blob";
 
 const ML_APP_ID = process.env.ML_APP_ID;
 const ML_SECRET = process.env.ML_SECRET;
@@ -6,7 +6,7 @@ const REDIRECT_URI = process.env.REDIRECT_URI || "https://powercase-moderated.ve
 
 async function saveToken(payload) {
   await put("ml_token.json", JSON.stringify(payload), {
-    access: "public",
+    access: "private",
     allowOverwrite: true,
     addRandomSuffix: false,
   });
@@ -16,7 +16,8 @@ async function loadToken() {
   try {
     const { blobs } = await list({ prefix: "ml_token.json" });
     if (!blobs.length) return null;
-    const res = await fetch(blobs[0].url);
+    const { url } = await getDownloadUrl(blobs[0].url);
+    const res = await fetch(url);
     if (!res.ok) return null;
     return res.json();
   } catch {
