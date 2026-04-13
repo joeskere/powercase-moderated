@@ -3,21 +3,22 @@ import { put, list, getDownloadUrl } from "@vercel/blob";
 const ML_APP_ID = process.env.ML_APP_ID;
 const ML_SECRET = process.env.ML_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || "https://powercase-moderated.vercel.app/api/auth/callback";
+const BLOB_TOKEN = process.env.blobbyy_READ_WRITE_TOKEN;
 
 async function saveToken(payload) {
   await put("ml_token.json", JSON.stringify(payload), {
-    access: "private",
+    access: "public",
     allowOverwrite: true,
     addRandomSuffix: false,
+    token: BLOB_TOKEN,
   });
 }
 
 async function loadToken() {
   try {
-    const { blobs } = await list({ prefix: "ml_token.json" });
+    const { blobs } = await list({ prefix: "ml_token.json", token: BLOB_TOKEN });
     if (!blobs.length) return null;
-    const { url } = await getDownloadUrl(blobs[0].url);
-    const res = await fetch(url);
+    const res = await fetch(blobs[0].url);
     if (!res.ok) return null;
     return res.json();
   } catch {
