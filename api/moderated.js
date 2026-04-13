@@ -47,8 +47,7 @@ async function getValidToken() {
   return { token: tokenData.access_token, userId: tokenData.user_id };
 }
 
-// Solo trae items under_review (propiedad intelectual)
-async function fetchAllUnderReviewItems(token, sellerId) {
+async function fetchAllPausedIds(token, sellerId) {
   const items = [];
   let offset = 0;
   while (true) {
@@ -65,16 +64,26 @@ async function fetchAllUnderReviewItems(token, sellerId) {
   return items;
 }
 
-async function fetchItemsDetail(token, itemIds) {
-  const allItems = [];
+async function fetchChunk(token, ids) {
+  const res = await fetch(
+    `https://api.mercadolibre.com/items?ids=${ids.join(",")}&attributes=id,title,status,sub_status,attributes,seller_sku,permalink,thumbnail,price`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const data = await res.json();
+  return data.map(d => d.body).filter(Boolean);
+}
+
+async function fetchItemsDetailParallel(token, itemIds) {
+  const chunks = [];
   for (let i = 0; i < itemIds.length; i += 20) {
-    const chunk = itemIds.slice(i, i + 20).join(",");
-    const res = await fetch(
-      `https://api.mercadolibre.com/items?ids=${chunk}&attributes=id,title,status,sub_status,attributes,seller_sku,permalink,thumbnail,price`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const data = await res.json();
-    allItems.push(...data.map((d) => d.body).filter(Boolean));
+    chunks.push(itemIds.slice(i, i + 20));
+  }
+  // Procesar en grupos de 10 chunks simultáneos
+  const allItems = [];
+  for (let i = 0; i < chunks.length; i += 10) {
+    const batch = chunks.slice(i, i + 10);
+    const results = await Promise.all(batch.map(chunk => fetchChunk(token, chunk)));
+    results.forEach(r => allItems.push(...r));
   }
   return allItems;
 }
@@ -105,32 +114,30 @@ export default async function handler(req, res) {
   try {
     const { token, userId } = await getValidToken();
 
-    // Traer items under_review
-    const underReviewIds = await fetchAllUnderReviewItems(token, userId);
-    if (!underReviewIds.length) return res.json({ items: [], total: 0, seller_id: userId });
+    const pausedIds = await fetchAllPausedIds(token, userId);
+    if (!pausedIds.length) return res.json({ items: [], total: 0, seller_id: userId });
 
-    const itemsDetail = await fetchItemsDetail(token, underReviewIds);
+    const itemsDetail = await fetchItemsDetailParallel(token, pausedIds);
 
-    // Filtrar solo los de propiedad intelectual
-    const ipItems = itemsDetail.filter(item =>
-      item.sub_status &&
-      (item.sub_status.includes("forbidden") || item.sub_status.includes("pending_documentation"))
-    );
+    const ipItems = itemsDetail
+      .filter(item =>
+        item.sub_status &&
+        (item.sub_status.includes("forbidden") || item.sub_status.includes("pending_documentation"))
+      )
+      .map(item => ({
+        id: item.id,
+        title: item.title,
+        sku: extractSku(item),
+        status: item.status,
+        sub_status: item.sub_status,
+        motivo: getMotivoLabel(item.sub_status),
+        price: item.price,
+        thumbnail: item.thumbnail,
+        permalink: item.permalink,
+        appeal_url: `https://www.mercadolibre.com.mx/reclamaciones/reclamo/enviar?resource_type=item&resource_id=${item.id}`,
+      }));
 
-    const result = ipItems.map(item => ({
-      id: item.id,
-      title: item.title,
-      sku: extractSku(item),
-      status: item.status,
-      sub_status: item.sub_status,
-      motivo: getMotivoLabel(item.sub_status),
-      price: item.price,
-      thumbnail: item.thumbnail,
-      permalink: item.permalink,
-      appeal_url: `https://www.mercadolibre.com.mx/reclamaciones/reclamo/enviar?resource_type=item&resource_id=${item.id}`,
-    }));
-
-    return res.json({ items: result, total: result.length, seller_id: userId, under_review_total: underReviewIds.length });
+    return res.json({ items: ipItems, total: ipItems.length, seller_id: userId, paused_total: pausedIds.length });
   } catch (err) {
     console.error("Error:", err);
     return res.status(500).json({ error: err.message });
