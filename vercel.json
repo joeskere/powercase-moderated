@@ -3,6 +3,17 @@
     { "source": "/api/auth/(.*)", "destination": "/api/auth.js" },
     { "source": "/api/moderated", "destination": "/api/moderated.js" }
   ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src *; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data:; connect-src *;"
+        }
+      ]
+    }
+  ],
   "crons": [
     {
       "path": "/api/auth/refresh",
