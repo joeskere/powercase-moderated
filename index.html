@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Moderados ML — Powercase</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg: #0a0a0b;
+      --surface: #111113;
+      --surface2: #18181c;
+      --border: #2a2a30;
+      --accent: #ff4b2b;
+      --accent2: #ff9f1c;
+      --text: #f0f0f2;
+      --text-muted: #666672;
+      --text-dim: #3a3a44;
+      --green: #00e896;
+      --red: #ff4b2b;
+      --radius: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Background grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 48px 48px;
+      opacity: 0.3;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 48px;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .logo-area h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1;
+    }
+
+    .logo-area h1 span {
+      color: var(--accent);
+    }
+
+    .logo-area p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      font-family: 'DM Mono', monospace;
+      letter-spacing: 0.05em;
+    }
+
+    /* Status pill */
+    #status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 100px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 12px;
+      font-family: 'DM Mono', monospace;
+      color: var(--text-muted);
+      transition: all 0.3s;
+      cursor: default;
+      white-space: nowrap;
+    }
+
+    #status-pill.connected {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    #status-pill.disconnected {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+
+    .status-dot.pulse {
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Steps layout */
+    .steps {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    @media (max-width: 700px) {
+      .steps { grid-template-columns: 1fr; }
+    }
+
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .step-card.active { border-color: var(--accent); }
+    .step-card.done { border-color: var(--green); }
+
+    .step-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.4s ease;
+    }
+
+    .step-card.done::before {
+      background: var(--green);
+      transform: scaleX(1);
+    }
+
+    .step-num {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      letter-spacing: 0.1em;
+    }
+
+    .step-card h3 {
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      color: var(--text);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s;
+      text-decoration: none;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover { background: #e63d20; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover { border-color: var(--text-muted); }
+
+    .btn-appeal {
+      background: transparent;
+      color: var(--accent2);
+      border: 1px solid var(--accent2);
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .btn-appeal:hover {
+      background: var(--accent2);
+      color: var(--bg);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    /* File drop zone */
+    .drop-zone {
+      border: 1.5px dashed var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--surface2);
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(255, 75, 43, 0.05);
+    }
+
+    .drop-zone input { display: none; }
+
+    .drop-zone-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    .drop-zone-icon {
+      font-size: 24px;
+      margin-bottom: 6px;
+    }
+
+    #file-name {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--green);
+      margin-top: 8px;
+    }
+
+    /* Stats bar */
+    #stats-bar {
+      display: none;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .stat-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .stat-chip .stat-val {
+      font-family: 'Syne', sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .stat-chip .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.3;
+    }
+
+    /* Table */
+    #results-section {
+      display: none;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .section-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .filter-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      padding: 5px 12px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-family: 'DM Mono', monospace;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .chip.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(255, 75, 43, 0.08);
+    }
+
+    /* Table styles */
+    .table-wrapper {
+      overflow-x: auto;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead {
+      background: var(--surface2);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 10px;
+      font-family: 'DM Mono', monospace;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .item-thumb {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+      border-radius: 6px;
+      background: var(--surface2);
+      flex-shrink: 0;
+    }
+
+    .item-title-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 240px;
+    }
+
+    .item-title {
+      font-size: 12px;
+      line-height: 1.4;
+      max-width: 240px;
+    }
+
+    .item-id {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .sku-tag {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 4px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .sku-tag.matched {
+      border-color: var(--green);
+      color: var(--green);
+      background: rgba(0, 232, 150, 0.06);
+    }
+
+    .sku-tag.no-sku {
+      border-color: var(--text-dim);
+      color: var(--text-dim);
+    }
+
+    .stock-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 100px;
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .stock-badge.has-stock {
+      background: rgba(0, 232, 150, 0.1);
+      border: 1px solid var(--green);
+      color: var(--green);
+    }
+
+    .stock-badge.no-stock {
+      background: rgba(255, 75, 43, 0.08);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+
+    .stock-badge.unknown {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    .price-cell {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    /* Loading state */
+    #loading {
+      display: none;
+      text-align: center;
+      padding: 60px 24px;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Empty state */
+    #empty-state {
+      display: none;
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--text-muted);
+    }
+
+    #empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    #empty-state p { font-size: 14px; }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 32px;
+      right: 32px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 100;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      max-width: 320px;
+      border: 1px solid;
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    #toast.success {
+      background: rgba(0, 232, 150, 0.1);
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    #toast.error {
+      background: rgba(255, 75, 43, 0.1);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    #toast.info {
+      background: var(--surface);
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    /* Search input */
+    .search-box {
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px 10px 36px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: 'DM Sans', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-box input:focus { border-color: var(--text-muted); }
+    .search-box input::placeholder { color: var(--text-dim); }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    .no-results-row td {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo-area">
+      <h1>MODERADOS <span>ML</span></h1>
+      <p>POWERCASE GROUP · MÉXICO</p>
+    </div>
+    <div id="status-pill" class="disconnected">
+      <span class="status-dot"></span>
+      <span id="status-text">Verificando conexión...</span>
+    </div>
+  </header>
+
+  <!-- Steps -->
+  <div class="steps">
+    <!-- Step 1: Conectar ML -->
+    <div class="step-card" id="step-auth">
+      <div class="step-num">PASO 01</div>
+      <h3>Conectar MercadoLibre</h3>
+      <div id="auth-content">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;line-height:1.6;">
+          Autorizá el acceso a tu cuenta de ML México para poder consultar tus publicaciones moderadas.
+        </p>
+        <a href="https://powercase-moderated.vercel.app/api/auth/login" class="btn btn-primary" id="btn-connect">
+          🔐 Conectar cuenta ML
+        </a>
+      </div>
+      <div id="auth-done" style="display:none;">
+        <p style="font-size:13px;color:var(--green);margin-bottom:12px;">✓ Cuenta conectada</p>
+        <p id="auth-seller-id" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted);"></p>
+        <button class="btn btn-secondary" style="margin-top:12px;font-size:11px;" onclick="disconnectAccount()">Desconectar</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Subir Excel -->
+    <div class="step-card" id="step-excel">
+      <div class="step-num">PASO 02</div>
+      <h3>Stock Zomatik (Excel)</h3>
+      <div
+        class="drop-zone"
+        id="drop-zone"
+        onclick="document.getElementById('file-input').click()"
+        ondragover="handleDragOver(event)"
+        ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event)"
+      >
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(event)" />
+        <div class="drop-zone-icon">📊</div>
+        <div style="font-size:13px;font-weight:500;">Subir reporte de stock</div>
+        <div class="drop-zone-text">Arrastrá o hacé click · .xlsx .xls .csv</div>
+      </div>
+      <div id="file-name"></div>
+      <div id="excel-stats" style="display:none;margin-top:12px;font-size:12px;color:var(--text-muted);font-family:'DM Mono',monospace;"></div>
+    </div>
+  </div>
+
+  <!-- Action button -->
+  <div style="margin-bottom:32px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+    <button class="btn btn-primary" id="btn-fetch" onclick="fetchModerated()" disabled>
+      🔍 Buscar publicaciones moderadas
+    </button>
+    <div id="search-wrap" style="display:none;flex:1;min-width:200px;max-width:360px;">
+      <div class="search-box">
+        <span class="search-icon">⌕</span>
+        <input type="text" placeholder="Buscar por título o SKU..." id="search-input" oninput="filterTable()" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div id="stats-bar" style="display:flex;">
+    <div class="stat-chip">
+      <div>
+        <div class="stat-val" id="stat-total">0</div>
+        <div class="stat-label">Total<br>moderados</div>
+      </div>
+    </div>
+    <div class="stat-chip">
+      <div>
+        <div class="stat-val" id="stat-stock" style="color:var(--green)">0</div>
+        <div class="stat-label">Con stock<br>en Zomatik</div>
+      </div>
+    </div>
+    <div class="stat-chip">
+      <div>
+        <div class="stat-val" id="stat-nostock" style="color:var(--text-muted)">0</div>
+        <div class="stat-label">Sin stock<br>en Zomatik</div>
+      </div>
+    </div>
+    <div class="stat-chip">
+      <div>
+        <div class="stat-val" id="stat-nosku" style="color:var(--accent2)">0</div>
+        <div class="stat-label">Sin SKU<br>en ML</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Consultando publicaciones moderadas...</div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="empty-state">
+    <div class="empty-icon">🎉</div>
+    <p>No se encontraron publicaciones moderadas por propiedad intelectual.</p>
+  </div>
+
+  <!-- Results table -->
+  <div id="results-section">
+    <div class="section-header">
+      <div class="section-title">Publicaciones moderadas</div>
+      <div class="filter-chips">
+        <div class="chip active" data-filter="all" onclick="setFilter('all', this)">Todas</div>
+        <div class="chip" data-filter="stock" onclick="setFilter('stock', this)">Con stock ✓</div>
+        <div class="chip" data-filter="nostock" onclick="setFilter('nostock', this)">Sin stock</div>
+        <div class="chip" data-filter="nosku" onclick="setFilter('nosku', this)">Sin SKU</div>
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>PUBLICACIÓN</th>
+            <th>SKU</th>
+            <th>STOCK ZOMATIK</th>
+            <th>PRECIO</th>
+            <th>MOTIVO</th>
+            <th>APELAR</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
