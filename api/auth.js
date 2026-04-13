@@ -1,32 +1,51 @@
-import { put, get } from "@vercel/blob";
-
 const ML_APP_ID = process.env.ML_APP_ID;
 const ML_SECRET = process.env.ML_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI || "https://powercase-moderated.vercel.app/api/auth/callback";
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+
+async function saveToken(payload) {
+  const res = await fetch("https://blob.vercel-storage.com/ml_token.json", {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${BLOB_TOKEN}`,
+      "Content-Type": "application/json",
+      "x-allow-overwrite": "1",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Blob save failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+async function loadToken() {
+  const listRes = await fetch("https://blob.vercel-storage.com?prefix=ml_token.json&limit=1", {
+    headers: { "Authorization": `Bearer ${BLOB_TOKEN}` },
+  });
+  const list = await listRes.json();
+  if (!list.blobs || list.blobs.length === 0) return null;
+  const res = await fetch(list.blobs[0].url);
+  if (!res.ok) return null;
+  return res.json();
+}
 
 export default async function handler(req, res) {
-  const { pathname } = new URL(req.url, `https://${req.headers.host}`);
+  const url = new URL(req.url, `https://${req.headers.host}`);
+  const pathname = url.pathname;
 
-  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // GET /api/auth/login → redirige a ML OAuth
   if (pathname === "/api/auth/login") {
     const mlAuthUrl = `https://auth.mercadolibre.com.mx/authorization?response_type=code&client_id=${ML_APP_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
     return res.redirect(mlAuthUrl);
   }
 
-  // GET /api/auth/callback → recibe code, obtiene token, guarda en Blob
   if (pathname === "/api/auth/callback") {
-    const { code, error } = req.query;
-
-    if (error || !code) {
-      return res.redirect(`/?error=oauth_denied`);
-    }
-
+    const code = url.searchParams.get("code");
+    const error = url.searchParams.get("error");
+    if (error || !code) return res.redirect(`/?error=oauth_denied`);
     try {
       const tokenRes = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",
@@ -39,24 +58,15 @@ export default async function handler(req, res) {
           redirect_uri: REDIRECT_URI,
         }),
       });
-
       const tokenData = await tokenRes.json();
       if (tokenData.error) throw new Error(tokenData.error);
-
-      // Guardar token en Blob
-      const tokenPayload = {
+      await saveToken({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
         user_id: tokenData.user_id,
         expires_at: Date.now() + tokenData.expires_in * 1000,
         saved_at: new Date().toISOString(),
-      };
-
-      await put("ml_token.json", JSON.stringify(tokenPayload), {
-        access: "public",
-        allowOverwrite: true,
       });
-
       return res.redirect(`/?connected=true&user_id=${tokenData.user_id}`);
     } catch (err) {
       console.error("OAuth error:", err);
@@ -64,34 +74,21 @@ export default async function handler(req, res) {
     }
   }
 
-  // GET /api/auth/status → devuelve si hay token activo
   if (pathname === "/api/auth/status") {
     try {
-      const blob = await get("ml_token.json");
-      if (!blob) return res.json({ connected: false });
-
-      const tokenData = JSON.parse(await (await fetch(blob.url)).text());
+      const tokenData = await loadToken();
+      if (!tokenData) return res.json({ connected: false });
       const isExpired = Date.now() > tokenData.expires_at;
-
-      return res.json({
-        connected: !isExpired,
-        expired: isExpired,
-        user_id: tokenData.user_id,
-        saved_at: tokenData.saved_at,
-      });
+      return res.json({ connected: !isExpired, expired: isExpired, user_id: tokenData.user_id, saved_at: tokenData.saved_at });
     } catch {
       return res.json({ connected: false });
     }
   }
 
-  // GET /api/auth/refresh → refresca el token
   if (pathname === "/api/auth/refresh") {
     try {
-      const blob = await get("ml_token.json");
-      if (!blob) return res.status(401).json({ error: "No token saved" });
-
-      const tokenData = JSON.parse(await (await fetch(blob.url)).text());
-
+      const tokenData = await loadToken();
+      if (!tokenData) return res.status(401).json({ error: "No token saved" });
       const refreshRes = await fetch("https://api.mercadolibre.com/oauth/token", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -102,23 +99,15 @@ export default async function handler(req, res) {
           refresh_token: tokenData.refresh_token,
         }),
       });
-
       const newToken = await refreshRes.json();
       if (newToken.error) throw new Error(newToken.error);
-
-      const newPayload = {
+      await saveToken({
         access_token: newToken.access_token,
         refresh_token: newToken.refresh_token,
         user_id: newToken.user_id,
         expires_at: Date.now() + newToken.expires_in * 1000,
         saved_at: new Date().toISOString(),
-      };
-
-      await put("ml_token.json", JSON.stringify(newPayload), {
-        access: "public",
-        allowOverwrite: true,
       });
-
       return res.json({ success: true, user_id: newToken.user_id });
     } catch (err) {
       return res.status(500).json({ error: err.message });
